@@ -220,3 +220,4 @@ __marimo__/
 
 # Sandbox Agent
 .sandbox_agent/
+.docker_sandbox/
