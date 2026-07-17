@@ -205,6 +205,7 @@ tempCodeRunnerFile.py
 
 # Ruff stuff:
 .ruff_cache/
+.docker_sandbox/
 
 # PyPI configuration file
 .pypirc
@@ -216,3 +217,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Sandbox Agent
+.sandbox_agent/
