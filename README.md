@@ -1,100 +1,135 @@
 # Sandbox Agent
 
-Sandbox Agent is a small Python command-line sample for running an OpenAI
-Agents SDK workflow inside a hardened Docker container. It generates a simple
-HTML lesson page, serves it from inside the container, and uses Playwright and
-Chromium to capture a screenshot.
+Sandbox Agent is a Python command-line project for running an OpenAI Agents SDK
+workload inside a hardened, disposable Docker sandbox.
+
+The current workload asks an agent to generate a small HTML lesson about the
+basics of HTML, saves the generated page into the run output directory, serves
+that page from inside the container, and uses Playwright with Chromium to
+capture a screenshot.
 
 > [!WARNING]
-> This is an experimental project and should not be considered production-ready.
+> This is an experimental sandboxing project and should not be treated as a
+> finished security model.
 
-The project was created to carry forward the Docker sandbox harness from the
-separate `SandboxTester` workbench without carrying forward the
-`sandbox_tester` capability-probe engine. The sandbox harness starts a
-disposable container, mounts a fresh run artifact directory, applies the
-`no-shell-access` hardening profile, and runs `sandbox_agent` inside that
-container.
+## Current Workflow
 
-## What It Does
-
-The CLI is launched from the host, but the agent itself refuses to run unless it
-detects the expected Docker sandbox environment:
-
-```powershell
-.\.venv\Scripts\python.exe -m sandbox_agent --profile no-shell-access
-```
-
-The Docker harness then:
-
-- builds or reuses the `sandbox-agent/sandbox-agent` Docker image
-- creates a timestamped run directory under `.docker_sandbox/runs`
-- starts a disposable Linux container using the `no-shell-access` profile
-- bind-mounts the run directory at `/sandbox-output`
-- bind-mounts the current `src` tree at `/sandbox-source/src`
-- forwards `OPENAI_API_KEY` into the container when it is present locally
-- runs `sandbox_agent` through a Landlock path-policy launcher
-- saves stdout, stderr, metadata, generated files, and screenshots as artifacts
-- removes the disposable container by default
-
-Inside the container, `sandbox_agent`:
-
-1. Starts a local static HTTP server for `/sandbox-output/site`.
-2. Creates an OpenAI Agents SDK agent named `HTML Lesson Page Builder`.
-3. Gives the agent two tools:
-   - save an HTML document into `/sandbox-output/site`
-   - capture a screenshot of a served HTML document with Playwright
-4. Asks the agent to create `index.html`, a basic lesson about HTML for a new
-   developer at a middle-school reading level.
-5. Saves a screenshot to `/sandbox-output/index.html.png`.
-
-Direct execution without the Docker profile is intentionally blocked:
+Run the project from the repository root:
 
 ```powershell
 .\.venv\Scripts\python.exe -m sandbox_agent
 ```
 
-That command exits with a message telling the user to run through the Docker
-sandbox.
+The host-side command loads `src/sandbox_agent/sandbox_spec.toml`, generates a
+Dockerfile and low-level Docker profile from that spec, builds or reuses a
+hash-tagged Docker image, starts a disposable container, and then runs
+`sandbox_agent` inside the container.
 
-## Requirements
+Inside the container, Sandbox Agent:
 
-- Python 3.11.
-- PowerShell on Windows.
-- Docker Desktop with Linux containers enabled.
-- An `OPENAI_API_KEY` environment variable for OpenAI model calls.
-- Network access to pull the Playwright Python Docker base image and the Squid
-  gateway image the first time they are needed.
+1. Starts a local static HTTP server for `/sandbox-output/site`.
+2. Creates an OpenAI Agents SDK agent named `HTML Lesson Page Builder`.
+3. Gives the agent two tools:
+   - save an HTML document into `/sandbox-output/site`
+   - capture a screenshot of a served HTML document with Playwright/Chromium
+4. Asks the agent to create `index.html`, a simple HTML lesson for a new
+   developer.
+5. Saves the screenshot as `/sandbox-output/index.html.png`.
 
-## Setup
+Run artifacts are written under `.docker_sandbox/runs/run-*`.
 
-Create the virtual environment and install the project with development
-dependencies:
+## Sandbox Spec
 
-```powershell
-.\scripts\setup-dev.ps1
+The sandbox is driven by a declarative TOML file:
+
+```toml
+schema_version = 1
+capabilities = [
+  "network",
+  "openai_agents",
+  "playwright_chromium",
+]
+allowed_domains = []
+allowed_ip_addresses = []
 ```
 
-The setup script expects Python 3.11 at the path configured in
-`scripts\setup-dev.ps1`.
+The design rule is that capabilities soften the sandbox only when necessary.
+Unknown keys and unsupported capability values fail closed.
 
-## Running
+Supported capabilities:
 
-Run the sandboxed agent from the repository root:
+- `network`: enables the Squid egress gateway. Network access is default-deny
+  unless domains or IP addresses are allowed by the resolved profile.
+- `openai`: installs the pinned OpenAI Python package, requires `network`, adds
+  `.openai.com` to the resolved domain allowlist, and forwards
+  `OPENAI_API_KEY` from the host.
+- `openai_agents`: installs the pinned OpenAI Agents SDK package, requires
+  `network`, adds `.openai.com`, forwards `OPENAI_API_KEY`, and sets
+  `SANDBOX_DENY_PROCESS_SPAWN=0`.
+- `playwright_chromium`: installs Playwright and Chromium, adds
+  `/ms-playwright` to the Landlock allowlist, sets
+  `PLAYWRIGHT_BROWSERS_PATH=/ms-playwright`, allows process spawning, and
+  increases browser-needed runtime limits.
 
-```powershell
-.\.venv\Scripts\python.exe -m sandbox_agent --profile no-shell-access
+`allowed_domains` and `allowed_ip_addresses` refine the `network` capability.
+They do not enable networking by themselves.
+
+Environment variables can be declared explicitly:
+
+```toml
+[[environment_variables]]
+name = "API_BASE_URL"
+value = "https://example.com"
 ```
 
-The command creates artifacts under a timestamped run directory:
+Or copied from the host:
+
+```toml
+[[environment_variables]]
+name = "OPENAI_API_KEY"
+from_host = true
+```
+
+OpenAI capabilities add `OPENAI_API_KEY` automatically, so the current spec does
+not need to declare it manually.
+
+## Docker Image Generation
+
+Docker images are tagged from the normalized sandbox spec:
+
+```text
+sandbox-agent/sandbox-agent:<schema-version>-<spec-hash>
+```
+
+For example:
+
+```text
+sandbox-agent/sandbox-agent:1-7ab18e84292c35c2
+```
+
+The generated Dockerfile is written both to the build area and to each run
+directory as an artifact. The resolved low-level profile is also written to the
+run directory as `resolved-profile.json`.
+
+If the spec changes, the hash changes and a new image tag is used. If the
+generator logic changes without the spec changing, bump the schema version to
+force a new image.
+
+## Run Artifacts
+
+A successful run directory contains files similar to:
 
 ```text
 .docker_sandbox/runs/run-YYYY-mm-dd-HH-MM-SS/
+  Dockerfile
   config.json
   gateway-logs.json
   gateway-start-results.json
   index.html.png
   landlock-policy.json
+  resolved-profile.json
   run-metadata.json
+  sandbox-spec.json
   seccomp-profile.json
   site/
     index.html
@@ -103,61 +138,26 @@ The command creates artifacts under a timestamped run directory:
   stdout.txt
 ```
 
-If the Dockerfile dependencies or image build settings change, remove the
-existing image before running again so the harness rebuilds it:
+`stdout.txt` contains the agent's final message. `stderr.txt` should normally be
+empty.
+
+## Requirements
+
+- Python 3.11.
+- PowerShell on Windows.
+- Docker Desktop with Linux containers enabled.
+- `OPENAI_API_KEY` in the host environment.
+- Network access during image builds to download Python packages, Linux
+  packages, and Playwright browser binaries.
+- Network access during runs to OpenAI API endpoints through the Squid gateway.
+
+## Setup
+
+Create the virtual environment and install development dependencies:
 
 ```powershell
-docker image rm sandbox-agent/sandbox-agent
+.\scripts\setup-dev.ps1
 ```
-
-## Docker Profile
-
-This project keeps only one Docker profile from the original Sandbox Tester
-lineage: `no-shell-access`.
-
-The profile uses the image name `sandbox-agent/sandbox-agent` and applies a
-defense-in-depth container policy that includes:
-
-- a read-only root filesystem
-- writable tmpfs mounts for `/tmp` and `/sandbox-work`
-- a writable run artifact mount at `/sandbox-output`
-- a read-only source mount at `/sandbox-source/src`
-- a Landlock filesystem policy
-- a seccomp profile denying privileged syscall families
-- private IPC and cgroup namespaces
-- dropped Linux capabilities and `no-new-privileges`
-- CPU, memory, process, file descriptor, and file size limits
-- an internal Docker network with a Squid egress gateway
-- DNS and host-name controls for common host and metadata endpoints
-- browser-surface hardening flags for Chromium
-- removal or denial of common package-management, SSH, GPG, service-management,
-  desktop-automation, and administration tools
-- runtime guards for UDP sockets, all-interface binds, metadata endpoints, and
-  hardware-device enumeration
-
-The profile currently does not enable the Python-level
-`SANDBOX_DENY_PROCESS_SPAWN` guard because the OpenAI Agents SDK imports code
-that expects `subprocess.Popen` to remain class-like. Other process and shell
-controls remain in place through image minimization, denied executable mounts,
-seccomp, Landlock, and the read-only/noexec runtime layout.
-
-## Architecture
-
-The project is split into two packages:
-
-- `sandbox_agent`: the AI agent runtime. It owns the OpenAI Agents SDK setup,
-  the HTML generation prompt, the local static HTTP server, and the tools that
-  write HTML and capture screenshots.
-- `docker_sandbox`: the host/container harness extracted from Sandbox Tester.
-  It owns Docker image creation, disposable container execution, hardening
-  profile configuration, Landlock launching, environment forwarding, artifact
-  persistence, and teardown.
-
-The host-side command path is intentionally different from the in-container
-agent path. `python -m sandbox_agent --profile no-shell-access` runs on the
-host and delegates to `docker_sandbox`. Plain `python -m sandbox_agent` is the
-in-container work path and requires both `SANDBOX_AGENT_CONTAINER=1` and the
-expected mounted paths to exist.
 
 ## Development Checks
 
@@ -174,57 +174,72 @@ This runs:
 - `pyright`
 - `pytest`
 
+## Architecture
+
+The project has two main packages:
+
+- `sandbox_agent`: the in-container workload. It owns the OpenAI Agents SDK
+  setup, the HTML lesson prompt, the local HTTP server, and the tools for saving
+  HTML and capturing screenshots.
+- `docker_sandbox`: the host/container harness extracted from the sibling
+  SandboxTester workbench. It owns sandbox spec loading, Dockerfile generation,
+  profile resolution, image creation, disposable container execution, Landlock
+  launching, egress gateway setup, artifact persistence, and teardown.
+
+The command path deliberately differs by location:
+
+- On the host, `python -m sandbox_agent` delegates to `docker_sandbox`.
+- Inside the container, `python -m sandbox_agent` runs the workload.
+
+The in-container path is guarded by `SANDBOX_AGENT_CONTAINER=1` and expected
+mounts such as `/sandbox-output`, `/sandbox-work`, and `/sandbox-source/src`.
+
 ## Project Structure
 
 ```text
 src/sandbox_agent/
-  __main__.py  Package entry point for python -m sandbox_agent
-  cli.py       Host delegation and in-container agent entry point
-  agent.py     OpenAI Agents SDK setup, prompt, and local HTTP server
-  tools.py     Agent tools for saving HTML and capturing screenshots
+  __main__.py        Package entry point for python -m sandbox_agent
+  agent.py           OpenAI Agents SDK workload and local HTTP server
+  cli.py             Host delegation and in-container workload entry point
+  sandbox_spec.toml  Declarative sandbox capability spec
+  tools.py           Agent tools for saving HTML and capturing screenshots
 
 src/docker_sandbox/
-  __main__.py                   Package entry point for python -m docker_sandbox
-  cli.py                        Docker sandbox command-line orchestration
-  container_factory.py          Docker image inspection and build operations
-  container_guard.py            Runtime guard for in-container execution
-  landlock_runner.py            Linux Landlock path-policy launcher
-  models.py                     Docker orchestration dataclasses
-  profiles.py                   no-shell-access Docker hardening profile
-  run_results.py                Local run artifact persistence
-  sandbox_container.py          Disposable container execution and setup
-  dockerfile/Dockerfile         Playwright Python image used for container runs
+  __main__.py                         Package entry point for docker_sandbox
+  cli.py                              Docker sandbox command-line orchestration
+  container_factory.py                Docker image inspection and build
+  container_guard.py                  Runtime guard for in-container execution
+  landlock_runner.py                  Linux Landlock path-policy launcher
+  models.py                           Docker orchestration dataclasses
+  profiles.py                         Legacy named profile definitions
+  run_results.py                      Local run artifact persistence
+  sandbox_container.py                Disposable container execution and setup
+  sandbox_spec.py                     Spec validation and profile/Dockerfile generation
+  dockerfile/remove_python_packaging.py
   dockerfile/runtime_sitecustomize.py
-                                Python runtime guards for hardened images
 
 tests/
+  test_sandbox_spec.py
   test_smoke.py
   test_tools.py
-
-scripts/
-  setup-dev.ps1
-  check.ps1
 ```
 
 ## Notes
 
-This project is a sandboxed-agent learning exercise, not a security proof. The
-Docker profile is intended to reduce accidental host exposure and make the
-runtime boundary explicit, but it should not be treated as a complete isolation
-guarantee.
+Sandbox Agent is a learning and hardening exercise, not a security proof. The
+container policy reduces accidental host exposure and makes required capability
+softening visible, but Docker, Landlock, seccomp, Squid, and Python runtime
+guards should not be interpreted as a complete isolation guarantee.
 
-Agent behavior and final page content can vary between runs because the page is
-model-generated. OpenAI API calls may incur usage costs.
+Generated content can vary between runs because it is model-generated. OpenAI
+API calls may incur usage costs.
 
-The generated website and screenshot are run artifacts. They are written under
-`.docker_sandbox/runs` and are ignored by Git.
+Run artifacts under `.docker_sandbox/runs` are ignored by Git.
 
 ## Third-Party Notices
 
-This project has direct runtime dependencies on third-party Python packages,
-including `openai-agents` (MIT), `playwright` (Apache-2.0), and `pillow`
-(MIT-CMU). See each package's PyPI license metadata for full license and notice
-terms.
+This project uses third-party packages including `openai-agents`, `openai`,
+`playwright`, and `pillow`. See each package's license metadata for details.
 
 ## License
 
