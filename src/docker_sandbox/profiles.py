@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from .models import (
     BrowserSurfaceProfile,
     DockerProfile,
@@ -15,6 +17,8 @@ from .models import (
 
 NO_SHELL_ACCESS_PROFILE_NAME = "no-shell-access"
 NO_SHELL_ACCESS_IMAGE_NAME = "sandbox-agent/sandbox-agent"
+MINIMAL_PROFILE_NAME = "minimal"
+MINIMAL_IMAGE_NAME = "sandbox-agent/sandbox-agent:minimal"
 
 _PROFILES: dict[str, DockerProfile] = {
     NO_SHELL_ACCESS_PROFILE_NAME: DockerProfile(
@@ -134,6 +138,79 @@ _PROFILES: dict[str, DockerProfile] = {
         remove_desktop_automation_tools=True,
     )
 }
+
+_PROFILES[MINIMAL_PROFILE_NAME] = replace(
+    _PROFILES[NO_SHELL_ACCESS_PROFILE_NAME],
+    name=MINIMAL_PROFILE_NAME,
+    description="Run the minimal Sandbox Agent workload with a hardened profile.",
+    image_name=MINIMAL_IMAGE_NAME,
+    ipc_mode=None,
+    shm_size=None,
+    pids_limit=64,
+    memory="128m",
+    memory_swap="128m",
+    cpus="1",
+    ulimits=(
+        DockerUlimit("nofile", 256, 256),
+        DockerUlimit("nproc", 64, 64),
+        DockerUlimit("fsize", 1048576, 1048576),
+    ),
+    container_run_options=(
+        "--network",
+        "none",
+        "--read-only",
+        "--tmpfs",
+        "/tmp:rw,nosuid,nodev,noexec,size=16m",
+        "--tmpfs",
+        "/sandbox-work:rw,nosuid,nodev,noexec,size=1m",
+        "--tmpfs",
+        "/proc/acpi:rw,nosuid,nodev,noexec,size=1k",
+        "--tmpfs",
+        "/sys/firmware:rw,nosuid,nodev,noexec,size=1k",
+        "--env",
+        "HOME=/tmp/sandbox-home",
+        "--env",
+        "XDG_CACHE_HOME=/tmp/sandbox-cache",
+        "--env",
+        "XDG_CONFIG_HOME=/tmp/sandbox-config",
+        "--env",
+        "XDG_RUNTIME_DIR=/tmp/sandbox-runtime",
+    ),
+    landlock_rules=(
+        LandlockPathRule("/bin", "rx"),
+        LandlockPathRule("/etc", "r"),
+        LandlockPathRule("/lib", "rx"),
+        LandlockPathRule("/lib64", "rx"),
+        LandlockPathRule("/opt/sandbox-agent", "rx"),
+        LandlockPathRule("/sbin", "rx"),
+        LandlockPathRule("/usr", "rx"),
+        LandlockPathRule("/usr/local", "rx"),
+        LandlockPathRule("/var", "r"),
+        LandlockPathRule("/dev", "rw"),
+        LandlockPathRule("/proc", "r"),
+        LandlockPathRule("/sandbox-source", "r"),
+        LandlockPathRule("/sandbox-output", "rw"),
+        LandlockPathRule("/sandbox-work", "rw"),
+        LandlockPathRule("/tmp", "rw"),
+    ),
+    network_gateway=None,
+    network_dns_policy=None,
+    browser_surface=None,
+    environment=(
+        EnvironmentVariablePolicy("OPENAI_API_KEY", None),
+        EnvironmentVariablePolicy("SSH_AUTH_SOCK", None),
+        EnvironmentVariablePolicy("GPG_AGENT_INFO", None),
+        EnvironmentVariablePolicy("DBUS_SESSION_BUS_ADDRESS", None),
+        EnvironmentVariablePolicy("DISPLAY", None),
+        EnvironmentVariablePolicy("WAYLAND_DISPLAY", None),
+        EnvironmentVariablePolicy("GNUPGHOME", "/tmp/sandbox-gnupg-empty"),
+        EnvironmentVariablePolicy("SANDBOX_DENY_UDP", "1"),
+        EnvironmentVariablePolicy("SANDBOX_DENY_METADATA_ENDPOINTS", "1"),
+        EnvironmentVariablePolicy("SANDBOX_DENY_ALL_INTERFACE_BIND", "1"),
+        EnvironmentVariablePolicy("SANDBOX_DENY_HARDWARE_DEVICE_ENUMERATION", "1"),
+        EnvironmentVariablePolicy("SANDBOX_DENY_PROCESS_SPAWN", "1"),
+    ),
+)
 
 SUPPORTED_PROFILE_NAMES = tuple(sorted(_PROFILES))
 

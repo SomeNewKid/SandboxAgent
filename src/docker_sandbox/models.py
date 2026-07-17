@@ -269,6 +269,10 @@ class DockerConfiguration:
     build_context: Path
     guest_user: str
     profile: DockerProfile
+    generated_dockerfile: str | None = None
+    resolved_spec: dict[str, object] | None = None
+    environment_variables: tuple[tuple[str, str], ...] = ()
+    local_environment_variable_names: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)

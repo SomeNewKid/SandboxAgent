@@ -12,16 +12,20 @@ from .models import (
     DockerImageStatus,
     DockerRunResult,
 )
-from .profiles import (
-    NO_SHELL_ACCESS_PROFILE_NAME,
-    SUPPORTED_PROFILE_NAMES,
-    get_docker_profile,
-)
+from .profiles import SUPPORTED_PROFILE_NAMES, get_docker_profile
 from .run_results import save_run_results
 from .sandbox_container import run_sandbox_container
+from .sandbox_spec import (
+    generate_dockerfile,
+    load_sandbox_spec,
+    resolve_environment_variables,
+    resolve_local_environment_variable_names,
+    resolve_profile,
+)
 
 _DEFAULT_BASE_DIRECTORY = Path(".docker_sandbox")
 _DEFAULT_DOCKERFILE = Path("src") / "docker_sandbox" / "dockerfile" / "Dockerfile"
+_DEFAULT_SANDBOX_SPEC = Path("src") / "sandbox_agent" / "sandbox_spec.toml"
 _DEFAULT_GUEST_USER = "sandbox"
 
 
@@ -82,11 +86,17 @@ def _parse_arguments(arguments: list[str] | None) -> argparse.Namespace:
     parser.add_argument(
         "--profile",
         choices=SUPPORTED_PROFILE_NAMES,
-        default=NO_SHELL_ACCESS_PROFILE_NAME,
+        default=None,
         help=(
-            "Docker hardening profile to apply. "
-            f"Default: {NO_SHELL_ACCESS_PROFILE_NAME}"
+            "Legacy Docker hardening profile to apply instead of the sandbox spec. "
+            f"Supported profiles: {', '.join(SUPPORTED_PROFILE_NAMES)}"
         ),
+    )
+    parser.add_argument(
+        "--sandbox-spec",
+        type=Path,
+        default=_DEFAULT_SANDBOX_SPEC,
+        help=f"Declarative sandbox spec. Default: {_DEFAULT_SANDBOX_SPEC}",
     )
     parser.add_argument(
         "--keep-container",
@@ -111,17 +121,40 @@ def _configuration_from_arguments(
 ) -> DockerConfiguration:
     repository_root = Path.cwd().resolve()
     base_directory = arguments.base_directory.expanduser().resolve()
-    dockerfile_path = arguments.dockerfile.expanduser()
-    if not dockerfile_path.is_absolute():
-        dockerfile_path = repository_root / dockerfile_path
+    if arguments.profile is not None:
+        dockerfile_path = arguments.dockerfile.expanduser()
+        if not dockerfile_path.is_absolute():
+            dockerfile_path = repository_root / dockerfile_path
+        profile = get_docker_profile(arguments.profile)
+        return DockerConfiguration(
+            base_directory=base_directory,
+            dockerfile_path=dockerfile_path.resolve(),
+            build_context=repository_root,
+            guest_user=arguments.guest_user,
+            profile=profile,
+        )
 
-    profile = get_docker_profile(arguments.profile)
+    sandbox_spec_path = arguments.sandbox_spec.expanduser()
+    if not sandbox_spec_path.is_absolute():
+        sandbox_spec_path = repository_root / sandbox_spec_path
+
+    spec = load_sandbox_spec(sandbox_spec_path.resolve())
+    profile = resolve_profile(spec)
+    generated_dockerfile = generate_dockerfile(spec)
+    dockerfile_path = base_directory / "generated" / spec.image_tag / "Dockerfile"
+    dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
+    dockerfile_path.write_text(f"{generated_dockerfile.rstrip()}\n", encoding="utf-8")
+
     return DockerConfiguration(
         base_directory=base_directory,
         dockerfile_path=dockerfile_path.resolve(),
         build_context=repository_root,
         guest_user=arguments.guest_user,
         profile=profile,
+        generated_dockerfile=generated_dockerfile,
+        resolved_spec=spec.to_dict() | {"image_name": spec.image_name},
+        environment_variables=resolve_environment_variables(spec),
+        local_environment_variable_names=resolve_local_environment_variable_names(spec),
     )
 
 

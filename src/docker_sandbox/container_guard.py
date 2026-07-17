@@ -22,7 +22,7 @@ def ensure_running_in_docker_sandbox() -> None:
 
     raise SystemExit(
         "Sandbox Agent must be run inside the Docker sandbox. "
-        "Use: python -m sandbox_agent --profile no-shell-access"
+        "Use: python -m sandbox_agent"
     )
 
 

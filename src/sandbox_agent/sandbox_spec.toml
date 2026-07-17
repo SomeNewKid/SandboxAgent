@@ -1,0 +1,8 @@
+schema_version = 1
+capabilities = [
+  "network",
+  "openai_agents",
+  "playwright_chromium",
+]
+allowed_domains = []
+allowed_ip_addresses = []

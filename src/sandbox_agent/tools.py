@@ -7,7 +7,6 @@ from pathlib import Path
 from urllib.parse import quote
 
 from agents import function_tool
-from playwright.sync_api import sync_playwright
 
 _OUTPUT_DIRECTORY = Path("/sandbox-output")
 _SITE_DIRECTORY = _OUTPUT_DIRECTORY / "site"
@@ -35,12 +34,19 @@ def save_html_document(file_name: str, file_contents: str) -> dict[str, bool | s
 
 def capture_screenshot(file_name: str) -> dict[str, bool | str]:
     """Capture a screenshot of a file served by the sandbox HTTP server."""
+    from playwright.sync_api import sync_playwright
+
     try:
         screenshot_path = _resolve_screenshot_path(file_name)
         screenshot_path.parent.mkdir(parents=True, exist_ok=True)
         url = _build_document_url(file_name)
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch()
+            browser = playwright.chromium.launch(
+                args=(
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                )
+            )
             try:
                 page = browser.new_page(viewport={"width": 1280, "height": 720})
                 page.goto(url, wait_until="networkidle")

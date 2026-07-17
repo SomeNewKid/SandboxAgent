@@ -9,9 +9,9 @@ import os
 import shlex
 import shutil
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Set
+from dataclasses import asdict
 from pathlib import Path, PurePosixPath
-from urllib.parse import urlparse
 
 from .container_guard import (
     CONTAINER_MARKER_ENVIRONMENT_VARIABLE,
@@ -78,6 +78,7 @@ def run_sandbox_container(
     run_id = f"run-{timestamp}"
     run_directory = configuration.base_directory / "runs" / run_id
     run_directory.mkdir(parents=True, exist_ok=True)
+    _write_configuration_artifacts(configuration, run_directory)
     container_name = f"{_CONTAINER_NAME_PREFIX}-{timestamp}"
     gateway_container_name = _build_gateway_container_name(configuration, timestamp)
     network_name = _build_network_name(configuration, timestamp)
@@ -102,8 +103,9 @@ def run_sandbox_container(
     config_path = run_directory / "config.json"
     config_json = json.dumps(config_data, indent=2)
     config_path.write_text(f"{config_json}\n", encoding="utf-8")
+    configured_environment_variables = dict(configuration.environment_variables)
     environment_variables = _resolve_environment_variables(
-        _SANDBOX_TESTER_ENVIRONMENT_VARIABLES,
+        configured_environment_variables,
     )
     gateway_commands, gateway_ip_address = _start_network_gateway(
         configuration,
@@ -121,9 +123,7 @@ def run_sandbox_container(
         denied_directory=denied_directory,
         environment_variables=environment_variables,
         gateway_ip_address=gateway_ip_address,
-        local_environment_variable_names=_get_local_environment_variable_names(
-            _SANDBOX_TESTER_ENVIRONMENT_VARIABLES,
-        ),
+        local_environment_variable_names=configuration.local_environment_variable_names,
         verbose=verbose,
         serialize_evidence=serialize_evidence,
     )
@@ -160,6 +160,44 @@ def run_sandbox_container(
         gateway_commands=gateway_commands,
         gateway_cleanup_commands=gateway_cleanup_commands,
     )
+
+
+def _write_configuration_artifacts(
+    configuration: DockerConfiguration,
+    run_directory: Path,
+) -> None:
+    if configuration.generated_dockerfile is not None:
+        dockerfile_text = configuration.generated_dockerfile.rstrip()
+        (run_directory / "Dockerfile").write_text(
+            f"{dockerfile_text}\n",
+            encoding="utf-8",
+        )
+
+    if configuration.resolved_spec is not None:
+        resolved_spec_json = json.dumps(configuration.resolved_spec, indent=2)
+        (run_directory / "sandbox-spec.json").write_text(
+            f"{resolved_spec_json}\n",
+            encoding="utf-8",
+        )
+
+    resolved_profile_json = json.dumps(
+        _json_safe(asdict(configuration.profile)),
+        indent=2,
+    )
+    (run_directory / "resolved-profile.json").write_text(
+        f"{resolved_profile_json}\n",
+        encoding="utf-8",
+    )
+
+
+def _json_safe(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    return value
 
 
 def _build_remote_run_directory(
@@ -402,27 +440,12 @@ def _build_allowed_gateway_domains(
     configured_domains: tuple[str, ...],
     config_data: Mapping[str, object],
 ) -> tuple[str, ...]:
+    _ = config_data
     domains = list(configured_domains)
-    _append_optional_domain(domains, config_data.get("allowed_domain"))
-    _append_git_remote_domain(domains, config_data.get("git_remote_url"))
     normalized_domains = tuple(
         dict.fromkeys(_normalize_gateway_domain(domain) for domain in domains)
     )
     return _remove_redundant_gateway_domain_suffixes(normalized_domains)
-
-
-def _append_optional_domain(domains: list[str], value: object) -> None:
-    if isinstance(value, str) and value:
-        domains.append(value)
-
-
-def _append_git_remote_domain(domains: list[str], value: object) -> None:
-    if not isinstance(value, str) or not value:
-        return
-
-    parsed_url = urlparse(value)
-    if parsed_url.hostname:
-        domains.append(parsed_url.hostname)
 
 
 def _normalize_gateway_domain(domain: str) -> str:
@@ -914,7 +937,7 @@ def _build_docker_run_command(
     denied_directory: str | None = None,
     environment_variables: dict[str, str] | None = None,
     gateway_ip_address: str | None = None,
-    local_environment_variable_names: set[str] | None = None,
+    local_environment_variable_names: Set[str] | None = None,
     verbose: bool = False,
     serialize_evidence: bool = False,
 ) -> list[str]:
@@ -957,7 +980,7 @@ def _build_docker_run_command(
                 environment_variables or {},
                 gateway_ip_address,
             ),
-            local_environment_variable_names or set(),
+            local_environment_variable_names or frozenset(),
         )
     )
     command.extend(
@@ -1423,7 +1446,7 @@ def _get_local_environment_variable_names(
 
 def _build_environment_options(
     environment_variables: Mapping[str, str],
-    local_environment_variable_names: set[str],
+    local_environment_variable_names: Set[str],
 ) -> list[str]:
     options: list[str] = []
 
