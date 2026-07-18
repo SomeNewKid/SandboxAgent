@@ -35,6 +35,8 @@ def test_network_capability_resolves_gateway_profile(tmp_path: Path) -> None:
 
     assert profile.network_gateway is not None
     assert profile.network_gateway.allowed_domains == (".example.com",)
+    assert "127.0.0.1" in profile.network_gateway.no_proxy_hosts
+    assert "localhost" in profile.network_gateway.no_proxy_hosts
     assert "--network" not in profile.container_run_options
     assert "none" not in profile.container_run_options
 
@@ -169,6 +171,158 @@ def test_openai_agents_capability_requires_network(tmp_path: Path) -> None:
         load_sandbox_spec(spec_path)
 
 
+def test_anthropic_python_capability_requires_network(tmp_path: Path) -> None:
+    """Verify Anthropic Python SDK cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["anthropic_python"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_anthropic_claude_capability_requires_network(tmp_path: Path) -> None:
+    """Verify Claude Agent SDK cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["anthropic_claude"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_beeai_capability_requires_network(tmp_path: Path) -> None:
+    """Verify BeeAI cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["ibm_beeai"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_google_adk_capability_requires_network(tmp_path: Path) -> None:
+    """Verify Google ADK cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["google_adk"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_langchain_capability_requires_network(tmp_path: Path) -> None:
+    """Verify LangChain cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["langchain"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_langgraph_capability_requires_network(tmp_path: Path) -> None:
+    """Verify LangGraph cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["langgraph"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_microsoft_agent_capability_requires_network(tmp_path: Path) -> None:
+    """Verify Microsoft Agent Framework cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["microsoft_agent"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
+def test_crewai_capability_requires_network(tmp_path: Path) -> None:
+    """Verify CrewAI cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["crewai"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
 def test_openai_capability_resolves_required_runtime_support(
     tmp_path: Path,
 ) -> None:
@@ -230,6 +384,275 @@ def test_openai_agents_capability_resolves_required_runtime_support(
     dockerfile = generate_dockerfile(spec)
     assert "openai-agents==0.18.2" in dockerfile
     assert "openai==2.45.0" not in dockerfile
+
+
+def test_anthropic_python_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify Anthropic Python SDK adds its package, domain, and host API key."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "anthropic_python"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".anthropic.com",)
+    assert resolve_environment_variables(spec) == (("ANTHROPIC_API_KEY", "[local]"),)
+    assert resolve_local_environment_variable_names(spec) == frozenset(
+        {"ANTHROPIC_API_KEY"}
+    )
+    assert all(policy.name != "ANTHROPIC_API_KEY" for policy in profile.environment)
+    dockerfile = generate_dockerfile(spec)
+    assert "anthropic==0.116.0" in dockerfile
+    assert "openai==2.45.0" not in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_anthropic_claude_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify Claude Agent SDK adds its package, domain, and host API key."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "anthropic_claude"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".anthropic.com",)
+    assert resolve_environment_variables(spec) == (("ANTHROPIC_API_KEY", "[local]"),)
+    assert resolve_local_environment_variable_names(spec) == frozenset(
+        {"ANTHROPIC_API_KEY"}
+    )
+    assert all(policy.name != "ANTHROPIC_API_KEY" for policy in profile.environment)
+    assert any(
+        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "0"
+        for policy in profile.environment
+    )
+    dockerfile = generate_dockerfile(spec)
+    assert "claude-agent-sdk==0.2.120" in dockerfile
+    assert "anthropic==0.116.0" not in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_beeai_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify BeeAI adds its package, OpenAI domain, and host API key."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "ibm_beeai"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    dockerfile = generate_dockerfile(spec)
+    assert "beeai-framework==0.1.81" in dockerfile
+    assert "'litellm[proxy]==1.92.0'" in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_google_adk_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify Google ADK adds its package, OpenAI domain, and host API key."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "google_adk"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    dockerfile = generate_dockerfile(spec)
+    assert "google-adk==2.5.0" in dockerfile
+    assert "'litellm[proxy]==1.92.0'" in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_langchain_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify LangChain adds its packages, OpenAI domain, and host API key."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "langchain"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    dockerfile = generate_dockerfile(spec)
+    assert "langchain==1.3.14" in dockerfile
+    assert "langchain-openai==1.3.5" in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_langgraph_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify LangGraph adds its packages, OpenAI domain, and host API key."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "langgraph"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    dockerfile = generate_dockerfile(spec)
+    assert "langgraph==1.2.9" in dockerfile
+    assert "langchain-openai==1.3.5" in dockerfile
+    assert "langchain==1.3.14" not in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_microsoft_agent_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify Microsoft Agent Framework adds its package and OpenAI support."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "microsoft_agent"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    assert any(
+        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "1"
+        for policy in profile.environment
+    )
+    dockerfile = generate_dockerfile(spec)
+    assert "agent-framework==1.11.0" in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_crewai_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify CrewAI adds its package and OpenAI support."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "crewai"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    assert any(
+        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "1"
+        for policy in profile.environment
+    )
+    assert any(
+        policy.name == "CREWAI_TRACING_ENABLED" and policy.value == "false"
+        for policy in profile.environment
+    )
+    assert any(
+        policy.name == "OTEL_SDK_DISABLED" and policy.value == "true"
+        for policy in profile.environment
+    )
+    assert (
+        "/tmp/sandbox-home:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=700"
+        in profile.container_run_options
+    )
+    dockerfile = generate_dockerfile(spec)
+    assert "crewai==1.15.3" in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
 
 
 def test_playwright_chromium_capability_resolves_browser_runtime_support(

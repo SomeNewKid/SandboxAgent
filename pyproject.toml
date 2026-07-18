@@ -10,6 +10,15 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "agent-framework",
+    "anthropic",
+    "beeai-framework",
+    "claude-agent-sdk",
+    "crewai",
+    "google-adk",
+    "langchain",
+    "langchain-openai",
+    "langgraph",
     "paramiko==5.0.0",
     "pymysql==1.2.0",
     "pyright",

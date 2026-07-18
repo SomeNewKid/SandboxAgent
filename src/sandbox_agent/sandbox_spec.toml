@@ -1,7 +1,7 @@
 schema_version = 1
 capabilities = [
   "network",
-  "openai_agents",
+  "crewai",
   "playwright_chromium",
 ]
 allowed_domains = [

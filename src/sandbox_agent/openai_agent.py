@@ -32,11 +32,11 @@ After saving index.html, capture a screenshot of index.html.
 """
 
 
-def create_html_lesson_agent(model: str = _DEFAULT_MODEL) -> Agent:
+def create_openai_agent(model: str = _DEFAULT_MODEL) -> Agent:
     """Create the Sandbox Agent HTML lesson generator."""
     from agents import Agent
 
-    from .tools import capture_screenshot_tool, save_html_document_tool
+    from .openai_tools import capture_screenshot_tool, save_html_document_tool
 
     return Agent(
         name="HTML Lesson Page Builder",
@@ -63,7 +63,7 @@ def run_html_lesson_agent(model: str = _DEFAULT_MODEL) -> str:
         os.environ[_HTTP_BASE_URL_ENVIRONMENT_VARIABLE] = base_url
         try:
             result = Runner.run_sync(
-                create_html_lesson_agent(model),
+                create_openai_agent(model),
                 _AGENT_PROMPT,
                 max_turns=10,
             )

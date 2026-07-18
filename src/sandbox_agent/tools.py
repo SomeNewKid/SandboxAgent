@@ -6,8 +6,6 @@ import os
 from pathlib import Path
 from urllib.parse import quote
 
-from agents import function_tool
-
 _OUTPUT_DIRECTORY = Path("/sandbox-output")
 _SITE_DIRECTORY = _OUTPUT_DIRECTORY / "site"
 _HTTP_BASE_URL_ENVIRONMENT_VARIABLE = "SANDBOX_AGENT_HTTP_BASE_URL"
@@ -34,25 +32,8 @@ def save_html_document(file_name: str, file_contents: str) -> dict[str, bool | s
 
 def capture_screenshot(file_name: str) -> dict[str, bool | str]:
     """Capture a screenshot of a file served by the sandbox HTTP server."""
-    from playwright.sync_api import sync_playwright
-
     try:
-        screenshot_path = _resolve_screenshot_path(file_name)
-        screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-        url = _build_document_url(file_name)
-        with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(
-                args=(
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                )
-            )
-            try:
-                page = browser.new_page(viewport={"width": 1280, "height": 720})
-                page.goto(url, wait_until="networkidle")
-                page.screenshot(path=str(screenshot_path), full_page=True)
-            finally:
-                browser.close()
+        screenshot_path = _capture_screenshot_file(file_name)
     except Exception:
         return _failure("capture", file_name)
 
@@ -63,6 +44,29 @@ def capture_screenshot(file_name: str) -> dict[str, bool | str]:
         "success": True,
         "message": f"Captured {file_name}",
     }
+
+
+def _capture_screenshot_file(file_name: str) -> Path:
+    from playwright.sync_api import sync_playwright
+
+    screenshot_path = _resolve_screenshot_path(file_name)
+    screenshot_path.parent.mkdir(parents=True, exist_ok=True)
+    url = _build_document_url(file_name)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(
+            args=(
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+            )
+        )
+        try:
+            page = browser.new_page(viewport={"width": 1280, "height": 720})
+            page.goto(url, wait_until="networkidle")
+            page.screenshot(path=str(screenshot_path), full_page=True)
+        finally:
+            browser.close()
+
+    return screenshot_path
 
 
 def _resolve_site_path(file_name: str) -> Path:
@@ -106,7 +110,3 @@ def _failure(action: str, file_name: str) -> dict[str, bool | str]:
         "success": False,
         "message": f"Failed to {action} `{file_name}",
     }
-
-
-save_html_document_tool = function_tool(save_html_document)
-capture_screenshot_tool = function_tool(capture_screenshot)

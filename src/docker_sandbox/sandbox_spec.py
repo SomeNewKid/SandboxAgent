@@ -26,6 +26,14 @@ _SUPPORTED_SCHEMA_VERSION = 1
 _NETWORK_CAPABILITY = "network"
 _OPENAI_CAPABILITY = "openai"
 _OPENAI_AGENTS_CAPABILITY = "openai_agents"
+_ANTHROPIC_CLAUDE_CAPABILITY = "anthropic_claude"
+_ANTHROPIC_PYTHON_CAPABILITY = "anthropic_python"
+_BEEAI_CAPABILITY = "ibm_beeai"
+_GOOGLE_ADK_CAPABILITY = "google_adk"
+_LANGCHAIN_CAPABILITY = "langchain"
+_LANGGRAPH_CAPABILITY = "langgraph"
+_MICROSOFT_AGENT_CAPABILITY = "microsoft_agent"
+_CREWAI_CAPABILITY = "crewai"
 _PLAYWRIGHT_CHROMIUM_CAPABILITY = "playwright_chromium"
 _SHELL_ACCESS_CAPABILITY = "shell_access"
 _SUPPORTED_KEYS = {
@@ -39,13 +47,37 @@ _SUPPORTED_CAPABILITIES = {
     _NETWORK_CAPABILITY,
     _OPENAI_CAPABILITY,
     _OPENAI_AGENTS_CAPABILITY,
+    _ANTHROPIC_CLAUDE_CAPABILITY,
+    _ANTHROPIC_PYTHON_CAPABILITY,
+    _BEEAI_CAPABILITY,
+    _GOOGLE_ADK_CAPABILITY,
+    _LANGCHAIN_CAPABILITY,
+    _LANGGRAPH_CAPABILITY,
+    _MICROSOFT_AGENT_CAPABILITY,
+    _CREWAI_CAPABILITY,
     _PLAYWRIGHT_CHROMIUM_CAPABILITY,
     _SHELL_ACCESS_CAPABILITY,
 }
 _HASH_LENGTH = 16
 _OPENAI_PACKAGE = "openai==2.45.0"
 _OPENAI_AGENTS_PACKAGE = "openai-agents==0.18.2"
+_CLAUDE_AGENT_SDK_PACKAGE = "claude-agent-sdk==0.2.120"
+_ANTHROPIC_PACKAGE = "anthropic==0.116.0"
+_BEEAI_PACKAGE = "beeai-framework==0.1.81"
+_GOOGLE_ADK_PACKAGE = "google-adk==2.5.0"
+_LANGCHAIN_PACKAGE = "langchain==1.3.14"
+_LANGCHAIN_OPENAI_PACKAGE = "langchain-openai==1.3.5"
+_LANGGRAPH_PACKAGE = "langgraph==1.2.9"
+_MICROSOFT_AGENT_PACKAGE = "agent-framework==1.11.0"
+_CREWAI_PACKAGE = "crewai==1.15.3"
+_LITELLM_PROXY_PACKAGE = "'litellm[proxy]==1.92.0'"
 _PLAYWRIGHT_PACKAGE = "playwright==1.61.0"
+_CREWAI_WRITABLE_TMPFS_OPTIONS = (
+    "/tmp/sandbox-home:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=700",
+    "/tmp/sandbox-cache:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=700",
+    "/tmp/sandbox-config:rw,nosuid,nodev,noexec,size=64m,uid=1000,gid=1000,mode=700",
+    "/tmp/sandbox-runtime:rw,nosuid,nodev,noexec,size=16m,uid=1000,gid=1000,mode=700",
+)
 _PROBE_PACKAGES = (
     "paramiko==5.0.0",
     "pillow==12.3.0",
@@ -53,12 +85,16 @@ _PROBE_PACKAGES = (
 )
 _PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
 _OPENAI_API_KEY_ENVIRONMENT_VARIABLE = "OPENAI_API_KEY"
+_ANTHROPIC_API_KEY_ENVIRONMENT_VARIABLE = "ANTHROPIC_API_KEY"
 _PROCESS_SPAWN_POLICY_ENVIRONMENT_VARIABLE = "SANDBOX_DENY_PROCESS_SPAWN"
 _OPENAI_ALLOWED_DOMAIN = ".openai.com"
+_ANTHROPIC_ALLOWED_DOMAIN = ".anthropic.com"
 _GATEWAY_IMAGE_NAME = "ubuntu/squid:latest"
 _GATEWAY_PROXY_HOST = "egress-gateway"
 _GATEWAY_PROXY_PORT = 3128
 _NO_PROXY_HOSTS = (
+    "127.0.0.1",
+    "localhost",
     "169.254.169.254",
     "metadata.google.internal",
 )
@@ -201,13 +237,37 @@ def resolve_profile(spec: SandboxSpec) -> DockerProfile:
             environment,
             _OPENAI_API_KEY_ENVIRONMENT_VARIABLE,
         )
+    if _has_anthropic_family_capability(spec):
+        environment = _without_environment_policy(
+            environment,
+            _ANTHROPIC_API_KEY_ENVIRONMENT_VARIABLE,
+        )
 
-    if spec.has_capability(_SHELL_ACCESS_CAPABILITY):
+    if spec.has_capability(_SHELL_ACCESS_CAPABILITY) or spec.has_capability(
+        _ANTHROPIC_CLAUDE_CAPABILITY
+    ):
         environment = _replace_environment_policy(
             environment,
             _PROCESS_SPAWN_POLICY_ENVIRONMENT_VARIABLE,
             "0",
         )
+
+    if spec.has_capability(_CREWAI_CAPABILITY):
+        environment = _append_environment_policy(
+            environment,
+            "CREWAI_TRACING_ENABLED",
+            "false",
+        )
+        environment = _append_environment_policy(
+            environment,
+            "OTEL_SDK_DISABLED",
+            "true",
+        )
+        for tmpfs_option in _CREWAI_WRITABLE_TMPFS_OPTIONS:
+            container_run_options = _append_tmpfs_option(
+                container_run_options,
+                tmpfs_option,
+            )
 
     if spec.has_capability(_PLAYWRIGHT_CHROMIUM_CAPABILITY):
         browser_surface = BrowserSurfaceProfile()
@@ -375,6 +435,11 @@ def resolve_environment_variables(
         and _OPENAI_API_KEY_ENVIRONMENT_VARIABLE not in variable_names
     ):
         variables.append((_OPENAI_API_KEY_ENVIRONMENT_VARIABLE, "[local]"))
+    if (
+        _has_anthropic_family_capability(spec)
+        and _ANTHROPIC_API_KEY_ENVIRONMENT_VARIABLE not in variable_names
+    ):
+        variables.append((_ANTHROPIC_API_KEY_ENVIRONMENT_VARIABLE, "[local]"))
 
     return tuple(variables)
 
@@ -386,6 +451,8 @@ def resolve_local_environment_variable_names(spec: SandboxSpec) -> frozenset[str
     }
     if _has_openai_family_capability(spec):
         names.add(_OPENAI_API_KEY_ENVIRONMENT_VARIABLE)
+    if _has_anthropic_family_capability(spec):
+        names.add(_ANTHROPIC_API_KEY_ENVIRONMENT_VARIABLE)
     return frozenset(names)
 
 
@@ -454,9 +521,22 @@ def _validate_network_settings(
     openai_capabilities = {
         _OPENAI_CAPABILITY,
         _OPENAI_AGENTS_CAPABILITY,
+        _BEEAI_CAPABILITY,
+        _GOOGLE_ADK_CAPABILITY,
+        _LANGCHAIN_CAPABILITY,
+        _LANGGRAPH_CAPABILITY,
+        _MICROSOFT_AGENT_CAPABILITY,
+        _CREWAI_CAPABILITY,
     }.intersection(capabilities)
     if openai_capabilities and not has_network:
         names = ", ".join(sorted(openai_capabilities))
+        raise ValueError(f"The {names} capability requires the network capability.")
+    anthropic_capabilities = {
+        _ANTHROPIC_CLAUDE_CAPABILITY,
+        _ANTHROPIC_PYTHON_CAPABILITY,
+    }.intersection(capabilities)
+    if anthropic_capabilities and not has_network:
+        names = ", ".join(sorted(anthropic_capabilities))
         raise ValueError(f"The {names} capability requires the network capability.")
 
     if (allowed_domains or allowed_ip_addresses) and not has_network:
@@ -507,6 +587,8 @@ def _resolve_allowed_domains(spec: SandboxSpec) -> tuple[str, ...]:
     domains = list(spec.allowed_domains)
     if _has_openai_family_capability(spec):
         domains.append(_OPENAI_ALLOWED_DOMAIN)
+    if _has_anthropic_family_capability(spec):
+        domains.append(_ANTHROPIC_ALLOWED_DOMAIN)
 
     return tuple(dict.fromkeys(domains))
 
@@ -520,6 +602,26 @@ def _build_python_package_install_command(
         packages.append(_OPENAI_PACKAGE)
     if spec.has_capability(_OPENAI_AGENTS_CAPABILITY):
         packages.append(_OPENAI_AGENTS_PACKAGE)
+    if spec.has_capability(_ANTHROPIC_CLAUDE_CAPABILITY):
+        packages.append(_CLAUDE_AGENT_SDK_PACKAGE)
+    if spec.has_capability(_ANTHROPIC_PYTHON_CAPABILITY):
+        packages.append(_ANTHROPIC_PACKAGE)
+    if spec.has_capability(_BEEAI_CAPABILITY):
+        packages.append(_BEEAI_PACKAGE)
+        packages.append(_LITELLM_PROXY_PACKAGE)
+    if spec.has_capability(_GOOGLE_ADK_CAPABILITY):
+        packages.append(_GOOGLE_ADK_PACKAGE)
+        packages.append(_LITELLM_PROXY_PACKAGE)
+    if spec.has_capability(_LANGCHAIN_CAPABILITY):
+        packages.append(_LANGCHAIN_PACKAGE)
+        packages.append(_LANGCHAIN_OPENAI_PACKAGE)
+    if spec.has_capability(_LANGGRAPH_CAPABILITY):
+        packages.append(_LANGGRAPH_PACKAGE)
+        packages.append(_LANGCHAIN_OPENAI_PACKAGE)
+    if spec.has_capability(_MICROSOFT_AGENT_CAPABILITY):
+        packages.append(_MICROSOFT_AGENT_PACKAGE)
+    if spec.has_capability(_CREWAI_CAPABILITY):
+        packages.append(_CREWAI_PACKAGE)
     if spec.has_capability(_PLAYWRIGHT_CHROMIUM_CAPABILITY):
         packages.append(_PLAYWRIGHT_PACKAGE)
     if include_probe_dependencies:
@@ -602,9 +704,32 @@ def _replace_tmpfs_option(
     return tuple(replaced_options)
 
 
+def _append_tmpfs_option(
+    options: tuple[str, ...],
+    tmpfs_option: str,
+) -> tuple[str, ...]:
+    if tmpfs_option in options:
+        return options
+
+    return (*options, "--tmpfs", tmpfs_option)
+
+
 def _has_openai_family_capability(spec: SandboxSpec) -> bool:
-    return spec.has_capability(_OPENAI_CAPABILITY) or spec.has_capability(
-        _OPENAI_AGENTS_CAPABILITY
+    return (
+        spec.has_capability(_OPENAI_CAPABILITY)
+        or spec.has_capability(_OPENAI_AGENTS_CAPABILITY)
+        or spec.has_capability(_BEEAI_CAPABILITY)
+        or spec.has_capability(_GOOGLE_ADK_CAPABILITY)
+        or spec.has_capability(_LANGCHAIN_CAPABILITY)
+        or spec.has_capability(_LANGGRAPH_CAPABILITY)
+        or spec.has_capability(_MICROSOFT_AGENT_CAPABILITY)
+        or spec.has_capability(_CREWAI_CAPABILITY)
+    )
+
+
+def _has_anthropic_family_capability(spec: SandboxSpec) -> bool:
+    return spec.has_capability(_ANTHROPIC_CLAUDE_CAPABILITY) or spec.has_capability(
+        _ANTHROPIC_PYTHON_CAPABILITY
     )
 
 
