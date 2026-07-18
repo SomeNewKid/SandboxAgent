@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .models import (
+    BrowserSurfaceProfile,
     DockerProfile,
     DockerUlimit,
     EnvironmentVariablePolicy,
@@ -26,6 +27,7 @@ _NETWORK_CAPABILITY = "network"
 _OPENAI_CAPABILITY = "openai"
 _OPENAI_AGENTS_CAPABILITY = "openai_agents"
 _PLAYWRIGHT_CHROMIUM_CAPABILITY = "playwright_chromium"
+_SHELL_ACCESS_CAPABILITY = "shell_access"
 _SUPPORTED_KEYS = {
     "schema_version",
     "capabilities",
@@ -38,11 +40,17 @@ _SUPPORTED_CAPABILITIES = {
     _OPENAI_CAPABILITY,
     _OPENAI_AGENTS_CAPABILITY,
     _PLAYWRIGHT_CHROMIUM_CAPABILITY,
+    _SHELL_ACCESS_CAPABILITY,
 }
 _HASH_LENGTH = 16
 _OPENAI_PACKAGE = "openai==2.45.0"
 _OPENAI_AGENTS_PACKAGE = "openai-agents==0.18.2"
 _PLAYWRIGHT_PACKAGE = "playwright==1.61.0"
+_PROBE_PACKAGES = (
+    "paramiko==5.0.0",
+    "pillow==12.3.0",
+    "pymysql==1.2.0",
+)
 _PLAYWRIGHT_BROWSERS_PATH = "/ms-playwright"
 _OPENAI_API_KEY_ENVIRONMENT_VARIABLE = "OPENAI_API_KEY"
 _PROCESS_SPAWN_POLICY_ENVIRONMENT_VARIABLE = "SANDBOX_DENY_PROCESS_SPAWN"
@@ -175,6 +183,7 @@ def resolve_profile(spec: SandboxSpec) -> DockerProfile:
     memory_swap = minimal_profile.memory_swap
     shm_size = minimal_profile.shm_size
     ulimits = minimal_profile.ulimits
+    browser_surface = minimal_profile.browser_surface
     if spec.has_capability(_NETWORK_CAPABILITY):
         network_gateway = NetworkGatewayProfile(
             image_name=_GATEWAY_IMAGE_NAME,
@@ -193,7 +202,7 @@ def resolve_profile(spec: SandboxSpec) -> DockerProfile:
             _OPENAI_API_KEY_ENVIRONMENT_VARIABLE,
         )
 
-    if spec.has_capability(_OPENAI_AGENTS_CAPABILITY):
+    if spec.has_capability(_SHELL_ACCESS_CAPABILITY):
         environment = _replace_environment_policy(
             environment,
             _PROCESS_SPAWN_POLICY_ENVIRONMENT_VARIABLE,
@@ -201,11 +210,7 @@ def resolve_profile(spec: SandboxSpec) -> DockerProfile:
         )
 
     if spec.has_capability(_PLAYWRIGHT_CHROMIUM_CAPABILITY):
-        environment = _replace_environment_policy(
-            environment,
-            _PROCESS_SPAWN_POLICY_ENVIRONMENT_VARIABLE,
-            "0",
-        )
+        browser_surface = BrowserSurfaceProfile()
         environment = _append_environment_policy(
             environment,
             "PLAYWRIGHT_BROWSERS_PATH",
@@ -252,12 +257,19 @@ def resolve_profile(spec: SandboxSpec) -> DockerProfile:
         memory_swap=memory_swap,
         shm_size=shm_size,
         ulimits=ulimits,
+        browser_surface=browser_surface,
     )
 
 
-def generate_dockerfile(spec: SandboxSpec) -> str:
+def generate_dockerfile(
+    spec: SandboxSpec,
+    include_probe_dependencies: bool = False,
+) -> str:
     """Generate the Dockerfile needed by the sandbox spec."""
-    package_install_command = _build_python_package_install_command(spec)
+    package_install_command = _build_python_package_install_command(
+        spec,
+        include_probe_dependencies=include_probe_dependencies,
+    )
     return f"""FROM python:3.12-slim
 
 WORKDIR /opt/sandbox-agent
@@ -499,7 +511,10 @@ def _resolve_allowed_domains(spec: SandboxSpec) -> tuple[str, ...]:
     return tuple(dict.fromkeys(domains))
 
 
-def _build_python_package_install_command(spec: SandboxSpec) -> str:
+def _build_python_package_install_command(
+    spec: SandboxSpec,
+    include_probe_dependencies: bool = False,
+) -> str:
     packages = []
     if spec.has_capability(_OPENAI_CAPABILITY):
         packages.append(_OPENAI_PACKAGE)
@@ -507,6 +522,8 @@ def _build_python_package_install_command(spec: SandboxSpec) -> str:
         packages.append(_OPENAI_AGENTS_PACKAGE)
     if spec.has_capability(_PLAYWRIGHT_CHROMIUM_CAPABILITY):
         packages.append(_PLAYWRIGHT_PACKAGE)
+    if include_probe_dependencies:
+        packages.extend(_PROBE_PACKAGES)
 
     if not packages:
         return ""

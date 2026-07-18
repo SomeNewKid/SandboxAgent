@@ -260,6 +260,13 @@ class DockerImageStatus(StrEnum):
     DOCKERFILE_MISSING = "dockerfile_missing"
 
 
+class SandboxRunTarget(StrEnum):
+    """Workload to execute inside the Docker sandbox."""
+
+    AGENT = "sandbox_agent"
+    TESTER = "sandbox_tester"
+
+
 @dataclass(frozen=True)
 class DockerConfiguration:
     """Configuration for creating Docker sandbox images."""
@@ -273,6 +280,7 @@ class DockerConfiguration:
     resolved_spec: dict[str, object] | None = None
     environment_variables: tuple[tuple[str, str], ...] = ()
     local_environment_variable_names: frozenset[str] = frozenset()
+    run_target: SandboxRunTarget = SandboxRunTarget.AGENT
 
 
 @dataclass(frozen=True)

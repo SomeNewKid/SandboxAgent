@@ -25,6 +25,7 @@ from .models import (
     DockerRunResult,
     EnvironmentVariablePolicy,
     NetworkDnsPolicy,
+    SandboxRunTarget,
     SeccompProfile,
     SocketMount,
 )
@@ -989,6 +990,7 @@ def _build_docker_run_command(
             "/bin/sh",
             "-c",
             _build_container_script(
+                run_target=configuration.run_target,
                 remote_run_directory=remote_run_directory,
                 allowed_directory=(
                     allowed_directory
@@ -1311,6 +1313,7 @@ def _get_container_gpg_home(configuration: DockerConfiguration) -> str | None:
 
 
 def _build_container_script(
+    run_target: SandboxRunTarget,
     remote_run_directory: str,
     allowed_directory: str | None = None,
     denied_directory: str | None = None,
@@ -1326,7 +1329,7 @@ def _build_container_script(
 
     allowed_child_directory = f"{allowed_directory}/allowed"
     denied_child_directory = f"{denied_directory}/denied"
-    arguments = _build_sandbox_command_arguments(landlock_policy_path)
+    arguments = _build_sandbox_command_arguments(run_target, landlock_policy_path)
     if verbose:
         arguments.append("--verbose")
     if serialize_evidence:
@@ -1380,9 +1383,19 @@ def _build_container_script(
 
 
 def _build_sandbox_command_arguments(
+    run_target: SandboxRunTarget,
     landlock_policy_path: str | None,
 ) -> list[str]:
     if landlock_policy_path is None:
+        if run_target == SandboxRunTarget.TESTER:
+            return [
+                "python",
+                "-m",
+                "sandbox_tester",
+                "--config",
+                f"{_REMOTE_OUTPUT_DIRECTORY}/config.json",
+            ]
+
         return [
             "python",
             "-m",
@@ -1397,6 +1410,8 @@ def _build_sandbox_command_arguments(
         f"{_REMOTE_OUTPUT_DIRECTORY}/config.json",
         "--policy",
         landlock_policy_path,
+        "--target",
+        run_target.value,
     ]
 
 

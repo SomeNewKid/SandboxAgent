@@ -18,6 +18,9 @@ def main(argv: list[str] | None = None) -> int:
     if not is_running_in_docker_sandbox():
         return docker_sandbox_main(args)
 
+    if "--test-sandbox" in args:
+        raise SystemExit("--test-sandbox must be used from the host.")
+
     ensure_running_in_docker_sandbox()
 
     print(run_html_lesson_agent())

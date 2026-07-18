@@ -7,6 +7,7 @@ import ctypes
 import json
 import os
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,9 @@ _ACCESS_BY_NAME = {
     "w": _WRITE_RIGHTS,
     "x": _EXECUTE_RIGHTS,
 }
+_LANDLOCK_BOOTSTRAP_CTYPES_ENVIRONMENT_VARIABLE = (
+    "SANDBOX_ALLOW_LANDLOCK_BOOTSTRAP_CTYPES"
+)
 
 
 class _LandlockRulesetAttr(ctypes.Structure):
@@ -78,17 +82,39 @@ class _PathRule:
 
 
 def main(arguments: list[str] | None = None) -> int:
-    """Apply Landlock, then run Sandbox Agent."""
+    """Apply Landlock, then run the selected sandbox workload."""
     parsed_arguments = _parse_arguments(arguments)
     rules = _read_policy(parsed_arguments.policy)
     _apply_landlock_rules(rules)
     _drop_bootstrap_ctypes_modules()
 
-    from sandbox_agent.cli import main as sandbox_agent_main
+    if parsed_arguments.target == "sandbox_tester":
+        sandbox_tester_main = _import_sandbox_tester_main()
+
+        _disable_runtime_ctypes_access()
+
+        sandbox_arguments = ["--config", str(parsed_arguments.config)]
+        if parsed_arguments.verbose:
+            sandbox_arguments.append("--verbose")
+        if parsed_arguments.serialize_evidence:
+            sandbox_arguments.append("--serialize-evidence")
+        return sandbox_tester_main(sandbox_arguments)
 
     _disable_runtime_ctypes_access()
 
+    from sandbox_agent.cli import main as sandbox_agent_main
+
     return sandbox_agent_main([])
+
+
+def _import_sandbox_tester_main() -> Callable[[list[str] | None], int]:
+    os.environ[_LANDLOCK_BOOTSTRAP_CTYPES_ENVIRONMENT_VARIABLE] = "1"
+    try:
+        from sandbox_tester.cli import main as sandbox_tester_main
+    finally:
+        os.environ.pop(_LANDLOCK_BOOTSTRAP_CTYPES_ENVIRONMENT_VARIABLE, None)
+
+    return sandbox_tester_main
 
 
 def _drop_bootstrap_ctypes_modules() -> None:
@@ -131,6 +157,11 @@ def _parse_arguments(arguments: list[str] | None) -> argparse.Namespace:
     )
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--policy", type=Path, required=True)
+    parser.add_argument(
+        "--target",
+        choices=("sandbox_agent", "sandbox_tester"),
+        default="sandbox_agent",
+    )
     parser.add_argument("--verbose", action="store_true")
     parser.add_argument("--serialize-evidence", action="store_true")
     return parser.parse_args(arguments)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from pathlib import Path
 
 from .container_factory import ensure_base_image
@@ -11,6 +12,7 @@ from .models import (
     DockerImageResult,
     DockerImageStatus,
     DockerRunResult,
+    SandboxRunTarget,
 )
 from .profiles import SUPPORTED_PROFILE_NAMES, get_docker_profile
 from .run_results import save_run_results
@@ -104,6 +106,11 @@ def _parse_arguments(arguments: list[str] | None) -> argparse.Namespace:
         help="Keep the disposable container after execution instead of removing it.",
     )
     parser.add_argument(
+        "--test-sandbox",
+        action="store_true",
+        help="Run the sandbox_tester probe suite instead of Sandbox Agent.",
+    )
+    parser.add_argument(
         "--verbose",
         action="store_true",
         help="Pass verbose progress output through to Sandbox Agent.",
@@ -140,8 +147,23 @@ def _configuration_from_arguments(
 
     spec = load_sandbox_spec(sandbox_spec_path.resolve())
     profile = resolve_profile(spec)
-    generated_dockerfile = generate_dockerfile(spec)
-    dockerfile_path = base_directory / "generated" / spec.image_tag / "Dockerfile"
+    run_target = (
+        SandboxRunTarget.TESTER if arguments.test_sandbox else SandboxRunTarget.AGENT
+    )
+    image_tag = spec.image_tag
+    if run_target == SandboxRunTarget.TESTER:
+        image_tag = f"{image_tag}-test-sandbox"
+        profile = replace(
+            profile,
+            name=f"{profile.name}-test-sandbox",
+            image_name=f"sandbox-agent/sandbox-agent:{image_tag}",
+        )
+
+    generated_dockerfile = generate_dockerfile(
+        spec,
+        include_probe_dependencies=run_target == SandboxRunTarget.TESTER,
+    )
+    dockerfile_path = base_directory / "generated" / image_tag / "Dockerfile"
     dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
     dockerfile_path.write_text(f"{generated_dockerfile.rstrip()}\n", encoding="utf-8")
 
@@ -152,9 +174,14 @@ def _configuration_from_arguments(
         guest_user=arguments.guest_user,
         profile=profile,
         generated_dockerfile=generated_dockerfile,
-        resolved_spec=spec.to_dict() | {"image_name": spec.image_name},
+        resolved_spec=spec.to_dict()
+        | {
+            "image_name": profile.image_name,
+            "test_sandbox": run_target == SandboxRunTarget.TESTER,
+        },
         environment_variables=resolve_environment_variables(spec),
         local_environment_variable_names=resolve_local_environment_variable_names(spec),
+        run_target=run_target,
     )
 
 

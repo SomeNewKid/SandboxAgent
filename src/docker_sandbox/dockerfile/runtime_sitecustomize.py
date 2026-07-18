@@ -44,6 +44,9 @@ _DENIED_METADATA_NETWORKS = tuple(
         "fe80::/10",
     )
 )
+_LANDLOCK_BOOTSTRAP_CTYPES_ENVIRONMENT_VARIABLE = (
+    "SANDBOX_ALLOW_LANDLOCK_BOOTSTRAP_CTYPES"
+)
 _ORIGINAL_SOCKET_CLASS = socket.socket
 _ORIGINAL_CREATE_CONNECTION = socket.create_connection
 _ORIGINAL_SPEC_FROM_FILE_LOCATION = importlib.util.spec_from_file_location
@@ -236,9 +239,10 @@ def _apply_process_spawn_guards() -> None:
     if not _process_spawn_denied():
         return
 
-    def guarded_popen(args, *popen_args, **popen_kwargs):  # type: ignore[no-untyped-def]
-        _raise_if_process_spawn_denied(args)
-        return _ORIGINAL_SUBPROCESS_POPEN(args, *popen_args, **popen_kwargs)
+    class GuardedPopen(_ORIGINAL_SUBPROCESS_POPEN):  # type: ignore[misc]
+        def __init__(self, args, *popen_args, **popen_kwargs):  # type: ignore[no-untyped-def]
+            _raise_if_process_spawn_denied(args)
+            super().__init__(args, *popen_args, **popen_kwargs)
 
     def guarded_run(args, *run_args, **run_kwargs):  # type: ignore[no-untyped-def]
         _raise_if_process_spawn_denied(args)
@@ -253,7 +257,7 @@ def _apply_process_spawn_guards() -> None:
     def denied_spawn(*args, **kwargs):  # type: ignore[no-untyped-def]
         raise PermissionError("Process spawning is denied by sandbox profile")
 
-    subprocess.Popen = guarded_popen
+    subprocess.Popen = GuardedPopen
     subprocess.run = guarded_run
     subprocess.call = guarded_run
     subprocess.check_call = guarded_run
@@ -422,10 +426,16 @@ def _is_landlock_bootstrap_import(module_name: str) -> bool:
     if module_name not in {"_ctypes", "ctypes"}:
         return False
 
-    return any(
-        frame.filename.endswith("/docker_sandbox/landlock_runner.py")
-        for frame in inspect.stack(context=0)
-    )
+    if _enabled(_LANDLOCK_BOOTSTRAP_CTYPES_ENVIRONMENT_VARIABLE):
+        return True
+
+    for frame in inspect.stack(context=0):
+        if not frame.filename.endswith("/docker_sandbox/landlock_runner.py"):
+            continue
+
+        return frame.function == "<module>"
+
+    return False
 
 
 _deny_writable_script_execution()

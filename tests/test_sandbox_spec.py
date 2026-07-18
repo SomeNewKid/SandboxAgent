@@ -202,7 +202,7 @@ def test_openai_capability_resolves_required_runtime_support(
 def test_openai_agents_capability_resolves_required_runtime_support(
     tmp_path: Path,
 ) -> None:
-    """Verify OpenAI Agents adds its package and process-spawn softening."""
+    """Verify OpenAI Agents adds its package without broad shell access."""
     spec_path = tmp_path / "sandbox_spec.toml"
     spec_path.write_text(
         "\n".join(
@@ -224,7 +224,7 @@ def test_openai_agents_capability_resolves_required_runtime_support(
     assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
     assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
     assert any(
-        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "0"
+        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "1"
         for policy in profile.environment
     )
     dockerfile = generate_dockerfile(spec)
@@ -235,7 +235,7 @@ def test_openai_agents_capability_resolves_required_runtime_support(
 def test_playwright_chromium_capability_resolves_browser_runtime_support(
     tmp_path: Path,
 ) -> None:
-    """Verify Playwright adds Chromium packages and browser runtime softening."""
+    """Verify Playwright adds Chromium packages without broad shell access."""
     spec_path = tmp_path / "sandbox_spec.toml"
     spec_path.write_text(
         "\n".join(
@@ -254,6 +254,7 @@ def test_playwright_chromium_capability_resolves_browser_runtime_support(
     dockerfile = generate_dockerfile(spec)
 
     assert profile.network_gateway is None
+    assert profile.browser_surface is not None
     assert "playwright==1.61.0" in dockerfile
     assert "python -m playwright install --with-deps chromium" in dockerfile
     assert any(rule.path == "/ms-playwright" for rule in profile.landlock_rules)
@@ -263,6 +264,29 @@ def test_playwright_chromium_capability_resolves_browser_runtime_support(
     assert any(
         ulimit.name == "fsize" and ulimit.soft == 52428800 for ulimit in profile.ulimits
     )
+    assert any(
+        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "1"
+        for policy in profile.environment
+    )
+
+
+def test_shell_access_capability_allows_process_spawn(tmp_path: Path) -> None:
+    """Verify shell access is an explicit capability."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["shell_access"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    profile = resolve_profile(load_sandbox_spec(spec_path))
+
     assert any(
         policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "0"
         for policy in profile.environment

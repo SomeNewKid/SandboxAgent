@@ -4,5 +4,8 @@ capabilities = [
   "openai_agents",
   "playwright_chromium",
 ]
-allowed_domains = []
+allowed_domains = [
+  ".example.com",
+  ".gov.uk"
+]
 allowed_ip_addresses = []
