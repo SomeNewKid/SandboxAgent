@@ -34,6 +34,7 @@ _LANGCHAIN_CAPABILITY = "langchain"
 _LANGGRAPH_CAPABILITY = "langgraph"
 _MICROSOFT_AGENT_CAPABILITY = "microsoft_agent"
 _CREWAI_CAPABILITY = "crewai"
+_OTTO_AGENT_CAPABILITY = "otto_agent"
 _PLAYWRIGHT_CHROMIUM_CAPABILITY = "playwright_chromium"
 _SHELL_ACCESS_CAPABILITY = "shell_access"
 _SUPPORTED_KEYS = {
@@ -55,6 +56,7 @@ _SUPPORTED_CAPABILITIES = {
     _LANGGRAPH_CAPABILITY,
     _MICROSOFT_AGENT_CAPABILITY,
     _CREWAI_CAPABILITY,
+    _OTTO_AGENT_CAPABILITY,
     _PLAYWRIGHT_CHROMIUM_CAPABILITY,
     _SHELL_ACCESS_CAPABILITY,
 }
@@ -527,6 +529,7 @@ def _validate_network_settings(
         _LANGGRAPH_CAPABILITY,
         _MICROSOFT_AGENT_CAPABILITY,
         _CREWAI_CAPABILITY,
+        _OTTO_AGENT_CAPABILITY,
     }.intersection(capabilities)
     if openai_capabilities and not has_network:
         names = ", ".join(sorted(openai_capabilities))
@@ -622,6 +625,8 @@ def _build_python_package_install_command(
         packages.append(_MICROSOFT_AGENT_PACKAGE)
     if spec.has_capability(_CREWAI_CAPABILITY):
         packages.append(_CREWAI_PACKAGE)
+    if spec.has_capability(_OTTO_AGENT_CAPABILITY):
+        packages.append(_OPENAI_PACKAGE)
     if spec.has_capability(_PLAYWRIGHT_CHROMIUM_CAPABILITY):
         packages.append(_PLAYWRIGHT_PACKAGE)
     if include_probe_dependencies:
@@ -724,6 +729,7 @@ def _has_openai_family_capability(spec: SandboxSpec) -> bool:
         or spec.has_capability(_LANGGRAPH_CAPABILITY)
         or spec.has_capability(_MICROSOFT_AGENT_CAPABILITY)
         or spec.has_capability(_CREWAI_CAPABILITY)
+        or spec.has_capability(_OTTO_AGENT_CAPABILITY)
     )
 
 

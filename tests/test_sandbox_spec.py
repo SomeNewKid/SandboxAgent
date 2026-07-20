@@ -323,6 +323,25 @@ def test_crewai_capability_requires_network(tmp_path: Path) -> None:
         load_sandbox_spec(spec_path)
 
 
+def test_otto_agent_capability_requires_network(tmp_path: Path) -> None:
+    """Verify Otto Agent cannot silently enable network access."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["otto_agent"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="requires the network capability"):
+        load_sandbox_spec(spec_path)
+
+
 def test_openai_capability_resolves_required_runtime_support(
     tmp_path: Path,
 ) -> None:
@@ -653,6 +672,43 @@ def test_crewai_capability_resolves_required_runtime_support(
     dockerfile = generate_dockerfile(spec)
     assert "crewai==1.15.3" in dockerfile
     assert "openai-agents==0.18.2" not in dockerfile
+
+
+def test_otto_agent_capability_resolves_required_runtime_support(
+    tmp_path: Path,
+) -> None:
+    """Verify Otto Agent adds only OpenAI runtime support."""
+    spec_path = tmp_path / "sandbox_spec.toml"
+    spec_path.write_text(
+        "\n".join(
+            [
+                "schema_version = 1",
+                'capabilities = ["network", "otto_agent"]',
+                "allowed_domains = []",
+                "allowed_ip_addresses = []",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    spec = load_sandbox_spec(spec_path)
+    profile = resolve_profile(spec)
+
+    assert profile.network_gateway is not None
+    assert profile.network_gateway.allowed_domains == (".openai.com",)
+    assert resolve_environment_variables(spec) == (("OPENAI_API_KEY", "[local]"),)
+    assert resolve_local_environment_variable_names(spec) == frozenset(
+        {"OPENAI_API_KEY"}
+    )
+    assert all(policy.name != "OPENAI_API_KEY" for policy in profile.environment)
+    assert any(
+        policy.name == "SANDBOX_DENY_PROCESS_SPAWN" and policy.value == "1"
+        for policy in profile.environment
+    )
+    dockerfile = generate_dockerfile(spec)
+    assert "openai==2.45.0" in dockerfile
+    assert "openai-agents==0.18.2" not in dockerfile
+    assert "crewai==1.15.3" not in dockerfile
 
 
 def test_playwright_chromium_capability_resolves_browser_runtime_support(

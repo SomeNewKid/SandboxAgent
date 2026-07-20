@@ -9,10 +9,10 @@ generate the Dockerfile, Docker image tag, low-level container profile, network
 allowlist, environment-variable policy, and runtime hardening needed for one
 Python workload.
 
-The current workload uses CrewAI to generate a small HTML lesson about the
-basics of HTML, saves the page into the run output directory, serves that page
-from inside the container, and uses Playwright with Chromium to capture a
-screenshot.
+The current workload uses Otto Agent, a first-party agent framework copied into
+this repository, to generate a small HTML lesson about the basics of HTML, save
+the page into the run output directory, serve that page from inside the
+container, and use Playwright with Chromium to capture a screenshot.
 
 > [!WARNING]
 > This is an experimental sandboxing project and should not be treated as a
@@ -102,6 +102,9 @@ OpenAI-backed capabilities:
 
 - `openai`: installs `openai`, requires `network`, adds `.openai.com`, and
   forwards `OPENAI_API_KEY` from the host.
+- `otto_agent`: installs `openai`, requires `network`, adds `.openai.com`,
+  forwards `OPENAI_API_KEY`, and runs the copied first-party Otto Agent
+  framework.
 - `openai_agents`: installs `openai-agents`, requires `network`, adds
   `.openai.com`, and forwards `OPENAI_API_KEY`.
 - `ibm_beeai`: installs `beeai-framework` and `litellm[proxy]`, requires
@@ -140,9 +143,10 @@ specific files adapt those tools to each SDK:
 - `anthropic_claude_agent.py` and `anthropic_claude_tools.py`
 - `microsoft_agent.py` and `microsoft_tools.py`
 - `crewai_agent.py` and `crewai_tools.py`
+- `otto_agent.py` and `otto_tools.py`
 
 `cli.py` selects the currently active workload. The current active workload is
-CrewAI.
+Otto Agent.
 
 ## Docker Image Generation
 
@@ -260,6 +264,9 @@ The project has three main pieces:
   launching, egress gateway setup, artifact persistence, and teardown.
 - `sandbox_tester`: the copied probe suite used by `--test-sandbox` to produce
   `report.json` for comparing sandbox behavior over time.
+- `otto_agent`: the copied first-party framework package. It provides generic
+  agent, tool, model-client, guardrail, validation, and harness machinery used
+  by the SandboxAgent-specific Otto workload adapter.
 
 The command path deliberately differs by location:
 
@@ -297,6 +304,9 @@ src/docker_sandbox/
 src/sandbox_tester/
   Probe definitions and report generation used by --test-sandbox
 
+src/otto_agent/
+  First-party agent framework copied from ObsidianVaultSummarizer
+
 tests/
   test_sandbox_spec.py
   test_sandbox_tester_serialization.py
@@ -321,7 +331,8 @@ Run artifacts under `.docker_sandbox/runs` are ignored by Git.
 This project uses third-party packages including `openai`, `openai-agents`,
 `beeai-framework`, `google-adk`, `langchain`, `langgraph`, `anthropic`,
 `claude-agent-sdk`, `agent-framework`, `crewai`, `playwright`, and `pillow`.
-See each package's license metadata for details.
+See each package's license metadata for details. Otto Agent is first-party code
+copied into this repository.
 
 ## License
 
